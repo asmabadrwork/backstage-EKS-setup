@@ -4,7 +4,7 @@ This repository contains the enterprise-grade production setup for the **Spotify
 
 ---
 
-## 🏛️ Production Architecture & Technology Stack
+##  Production Architecture & Technology Stack
 
 ```
 [ Users & Developers ]
@@ -53,7 +53,7 @@ This repository contains the enterprise-grade production setup for the **Spotify
 
 ---
 
-## 📁 Repository Structure
+##  Repository Structure
 
 ```text
 .
@@ -87,7 +87,7 @@ This repository contains the enterprise-grade production setup for the **Spotify
 
 ---
 
-## 🚀 Complete Setup Guide From Scratch (New EKS Cluster & New Server)
+##  Complete Setup Guide From Scratch (New EKS Cluster & New Server)
 
 > **Important Note**: Because **GitHub Actions handles 100% of the building, containerization, and deployment**, your management server is strictly a lightweight **Infrastructure Bootstrap Machine**. You do not need to install Node.js, compile code, or store build artifacts on the server.
 
@@ -423,13 +423,13 @@ kubectl logs -f deployment/backstage -n backstage -c backstage
 ```
 
 Open your browser:
-👉 **`https://backstage.tyagi.fun`**
+ **`https://backstage.tyagi.fun`**
 - Click **"Enter as Guest"**.
 - Your highly available, multi-AZ Spotify Backstage developer portal is live!
 
 ---
 
-## 🛡️ High Availability, Resilience & Pod Capacity
+##  High Availability, Resilience & Pod Capacity
 
 ### 1. What happens if 1 worker node goes down?
 - **Zero Downtime**: Backstage runs with `minAvailable: 2` in [pdb.yaml](helm/backstage/templates/pdb.yaml). Surviving pods in other Availability Zones immediately handle user traffic.
