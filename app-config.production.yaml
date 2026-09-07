@@ -34,8 +34,7 @@ backend:
 # Production Authentication Configuration
 auth:
   providers:
-    guest:
-      dangerouslyAllow: true
+    guest: {}
 
 catalog:
   locations:
