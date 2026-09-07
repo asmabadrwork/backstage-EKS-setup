@@ -106,14 +106,14 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1
+          aws-region: ${{ vars.AWS_REGION || 'ap-south-1' }}
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
       - name: Build and Push Docker Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: backstage
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'backstage' }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
@@ -133,9 +133,9 @@ jobs:
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            export KUBECONFIG=/home/ubuntu/.kube/config
-            /usr/local/bin/helm upgrade --install backstage /home/ubuntu/backstage/helm/backstage \
-              --namespace backstage \
+            export KUBECONFIG=${{ secrets.KUBECONFIG_PATH || '/home/ubuntu/.kube/config' }}
+            /usr/local/bin/helm upgrade --install backstage ${{ vars.HELM_CHART_PATH || '/home/ubuntu/backstage/helm/backstage' }} \
+              --namespace ${{ vars.K8S_NAMESPACE || 'backstage' }} \
               --set backstage.image.tag=${{ github.sha }}
-            /usr/local/bin/kubectl rollout status deployment backstage -n backstage
+            /usr/local/bin/kubectl rollout status deployment backstage -n ${{ vars.K8S_NAMESPACE || 'backstage' }}
 

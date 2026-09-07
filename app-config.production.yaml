@@ -1,17 +1,17 @@
 app:
-  baseUrl: https://backstage.tyagi.fun
+  baseUrl: ${APP_BASE_URL}
 
 backend:
-  baseUrl: https://backstage.tyagi.fun
+  baseUrl: ${BACKEND_BASE_URL:${APP_BASE_URL}}
   listen:
-    port: 7007
-    host: 0.0.0.0
+    port: ${PORT:7007}
+    host: ${HOST:0.0.0.0}
   csp:
     connect-src: ["'self'", 'http:', 'https:']
     upgrade-insecure-requests: false
 
   cors:
-    origin: https://backstage.tyagi.fun
+    origin: ${APP_BASE_URL}
     methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
     credentials: true
 
@@ -24,11 +24,12 @@ backend:
     client: pg
     connection:
       host: ${POSTGRES_HOST}
-      port: ${POSTGRES_PORT}
+      port: ${POSTGRES_PORT:5432}
       user: ${POSTGRES_USER}
       password: ${POSTGRES_PASSWORD}
-      database: ${POSTGRES_DATABASE}
-      ssl: false
+      database: ${POSTGRES_DATABASE:postgres}
+      ssl:
+        rejectUnauthorized: false
 
 # Production Authentication Configuration
 auth:

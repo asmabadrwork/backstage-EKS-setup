@@ -97,7 +97,7 @@ app:
               height: 4
 
 organization:
-  name: My Company
+  name: ${ORGANIZATION_NAME:My Company}
 
 backend:
   auth:
@@ -124,7 +124,7 @@ backend:
       port: ${POSTGRES_PORT}
       user: ${POSTGRES_USER}
       password: ${POSTGRES_PASSWORD}
-      database: postgres
+      database: ${POSTGRES_DATABASE:postgres}
       ssl: false
   # see https://backstage.io/docs/ai/mcp-actions#actions-configuration for more details
   actions:
@@ -228,5 +228,5 @@ permission:
 
 # see https://backstage.io/docs/ai/mcp-actions for more details
 mcpActions:
-  name: 'My Company Backstage' # defaults to "backstage"
+  name: '${ORGANIZATION_NAME:My Company} Backstage' # defaults to "backstage"
   description: 'Tools for managing your software catalog, creating new services from templates, and exploring your developer portal' # optional

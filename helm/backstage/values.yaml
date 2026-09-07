@@ -3,7 +3,7 @@ domain: example.com
 
 # Backstage Application Configuration
 backstage:
-  replicaCount: 2
+  replicaCount: 3
   image:
     repository: <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/backstage
     tag: 1.0.0
@@ -31,16 +31,16 @@ backstage:
       initialDelaySeconds: 30
       periodSeconds: 10
 
-# PostgreSQL Database Configuration
+# PostgreSQL Database Configuration (Configured for AWS RDS Multi-AZ)
 postgres:
-  enabled: true # Set to false when using external PostgreSQL (e.g. AWS RDS)
-  createSecret: true # Set to false if you manually created backstage-postgres-secrets via kubectl
-  host: ""      # Set host if postgres.enabled is false
+  enabled: false # Set to false when using external PostgreSQL (e.g. AWS RDS)
+  createSecret: true # Set to false if you manually created backstage-postgres-secrets via kubectl or externalSecrets
+  host: "<AWS_RDS_ENDPOINT>.ap-south-1.rds.amazonaws.com" # AWS RDS PostgreSQL endpoint
   port: 5432
   user: backstage
   password: "change-me-in-production"
   database: postgres
-  ssl: false
+  ssl: true
   image: postgres:15-alpine
   persistence:
     enabled: true
@@ -61,7 +61,16 @@ tls:
 
 # Application Secrets Management
 secrets:
-  create: true # Set to false if you manually created backstage-secrets via kubectl
+  create: true # Set to false when using externalSecrets (AWS Secrets Manager)
   name: backstage-secrets
   githubToken: ""
   backendSecret: ""
+
+# AWS Secrets Manager Integration (External Secrets Operator)
+externalSecrets:
+  enabled: false # Set to true when syncing secrets directly from AWS Secrets Manager
+  awsSecretName: "production/backstage"
+  secretStore:
+    name: aws-secrets-manager
+    region: ap-south-1
+    serviceAccountName: external-secrets-sa

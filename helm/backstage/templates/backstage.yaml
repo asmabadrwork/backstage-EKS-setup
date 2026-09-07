@@ -15,6 +15,22 @@ spec:
       labels:
         {{- include "backstage.selectorLabels" . | nindent 8 }}
     spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "backstage.selectorLabels" . | nindent 14 }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "backstage.selectorLabels" . | nindent 22 }}
+                topologyKey: topology.kubernetes.io/zone
       {{- with .Values.backstage.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -25,7 +41,7 @@ spec:
           imagePullPolicy: {{ .Values.backstage.image.pullPolicy }}
           ports:
             - name: http
-              containerPort: 7007
+              containerPort: {{ .Values.backstage.service.targetPort }}
           envFrom:
             - secretRef:
                 name: {{ .Release.Name }}-postgres-secrets
@@ -49,13 +65,13 @@ spec:
           readinessProbe:
             httpGet:
               path: {{ .Values.backstage.probes.readiness.path }}
-              port: 7007
+              port: {{ .Values.backstage.service.targetPort }}
             initialDelaySeconds: {{ .Values.backstage.probes.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.backstage.probes.readiness.periodSeconds }}
           livenessProbe:
             httpGet:
               path: {{ .Values.backstage.probes.liveness.path }}
-              port: 7007
+              port: {{ .Values.backstage.service.targetPort }}
             initialDelaySeconds: {{ .Values.backstage.probes.liveness.initialDelaySeconds }}
             periodSeconds: {{ .Values.backstage.probes.liveness.periodSeconds }}
           resources:

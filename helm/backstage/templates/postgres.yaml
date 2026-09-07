@@ -21,7 +21,7 @@ spec:
         - name: postgres
           image: {{ .Values.postgres.image }}
           ports:
-            - containerPort: 5432
+            - containerPort: {{ .Values.postgres.port }}
           envFrom:
             - secretRef:
                 name: {{ .Release.Name }}-postgres-secrets
@@ -52,5 +52,5 @@ spec:
     app: {{ include "backstage.fullname" . }}-postgres
   ports:
     - port: {{ .Values.postgres.port }}
-      targetPort: 5432
+      targetPort: {{ .Values.postgres.port }}
 {{- end }}
