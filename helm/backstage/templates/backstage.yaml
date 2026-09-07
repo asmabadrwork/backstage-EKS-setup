@@ -53,7 +53,7 @@ spec:
             - name: BACKEND_BASE_URL
               value: "https://{{ .Values.domain }}"
             - name: POSTGRES_HOST
-              value: {{ if .Values.postgres.enabled }}{{ include "backstage.fullname" . }}-postgres{{ else }}{{ .Values.postgres.host | quote }}{{ end }}
+              value: {{ .Values.postgres.host | quote }}
             - name: POSTGRES_PORT
               value: {{ .Values.postgres.port | quote }}
             - name: POSTGRES_USER

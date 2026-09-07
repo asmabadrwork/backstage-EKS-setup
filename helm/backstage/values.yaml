@@ -31,28 +31,15 @@ backstage:
       initialDelaySeconds: 30
       periodSeconds: 10
 
-# PostgreSQL Database Configuration (Configured for AWS RDS Multi-AZ)
+# Amazon RDS for PostgreSQL Database Configuration (Multi-AZ)
 postgres:
-  enabled: false # Set to false when using external PostgreSQL (e.g. AWS RDS)
-  createSecret: true # Set to false if you manually created backstage-postgres-secrets via kubectl or externalSecrets
-  host: "<AWS_RDS_ENDPOINT>.ap-south-1.rds.amazonaws.com" # AWS RDS PostgreSQL endpoint
+  createSecret: true # Set to false when using External Secrets Operator (AWS Secrets Manager)
+  host: "<AWS_RDS_ENDPOINT>.ap-south-1.rds.amazonaws.com"
   port: 5432
   user: backstage
   password: "change-me-in-production"
   database: postgres
   ssl: true
-  image: postgres:15-alpine
-  persistence:
-    enabled: true
-    storage: 5Gi
-    storageClass: "" # Empty uses cluster default StorageClass (e.g., gp3). Set to "manual" only if using hostPath PV.
-  resources:
-    limits:
-      cpu: 500m
-      memory: 1Gi
-    requests:
-      cpu: 100m
-      memory: 256Mi
 
 # TLS Configuration
 tls:
