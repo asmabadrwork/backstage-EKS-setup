@@ -6,9 +6,18 @@ on:
       - main
       - master
 
+# Permissions required for AWS OIDC authentication & checkout
+permissions:
+  id-token: write
+  contents: read
+
 env:
   CI: 'true'
   NODE_OPTIONS: '--max-old-space-size=8192'
+  AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'backstage-production' }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'backstage' }}
+  K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'backstage' }}
 
 jobs:
   # STAGE 1: Secret Scanning
@@ -22,7 +31,6 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
 
   # STAGE 2: Code Validation
   validation:
@@ -88,54 +96,83 @@ jobs:
           name: backend-dist
           path: packages/backend/dist/
 
-  # STAGE 5: Build Docker Container & Push to AWS ECR
+  # STAGE 5: Build Docker Container & Push to Amazon ECR via AWS OIDC
   push-ecr:
     name: Push to Amazon ECR
     needs: build-bundle
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ github.sha }}
+      ecr_registry: ${{ steps.login-ecr.outputs.registry }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
         with:
           name: backend-dist
           path: packages/backend/dist/
-      - name: Configure AWS Credentials
+
+      # Authenticate with AWS via OIDC (No static credentials)
+      - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
+
       - name: Build and Push Docker Image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'backstage' }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-  # STAGE 6: Deploy to Kubernetes Cluster via Helm
-  deploy-k8s:
-    name: Deploy to Kubernetes (Helm)
+  # STAGE 6: Deploy to Amazon EKS Cluster via Helm & OIDC
+  deploy-eks:
+    name: Deploy to EKS (Helm)
     needs: push-ecr
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Helm Deployment via SSH
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            export KUBECONFIG=${{ secrets.KUBECONFIG_PATH || '/home/ubuntu/.kube/config' }}
-            /usr/local/bin/helm upgrade --install backstage ${{ vars.HELM_CHART_PATH || '/home/ubuntu/backstage/helm/backstage' }} \
-              --namespace ${{ vars.K8S_NAMESPACE || 'backstage' }} \
-              --set backstage.image.tag=${{ github.sha }}
-            /usr/local/bin/kubectl rollout status deployment backstage -n ${{ vars.K8S_NAMESPACE || 'backstage' }}
+      - name: Checkout Repository (Helm Chart)
+        uses: actions/checkout@v4
 
+      - name: Set up Helm v3
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.15.0'
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'v1.32.0'
+
+      # Authenticate with AWS via OIDC
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update Kubeconfig for Amazon EKS
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Deploy Backstage via Helm
+        run: |
+          helm upgrade backstage ./helm/backstage \
+            --namespace ${{ env.K8S_NAMESPACE }} \
+            --reuse-values \
+            --set backstage.image.tag=${{ github.sha }}
+
+      - name: Verify Deployment Rollout Status
+        run: |
+          kubectl rollout status deployment backstage -n ${{ env.K8S_NAMESPACE }} --timeout=180s
