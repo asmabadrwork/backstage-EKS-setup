@@ -144,7 +144,11 @@ helm upgrade --install backstage ./helm/backstage \
   --set domain="<YOUR_DOMAIN>" \
   --set backstage.image.repository="<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/backstage" \
   --set backstage.image.tag="latest" \
+  --set postgres.enabled=false \
+  --set postgres.host="<AWS_RDS_ENDPOINT>.ap-south-1.rds.amazonaws.com" \
+  --set postgres.user="backstage" \
   --set postgres.password="<YOUR_POSTGRES_PASSWORD>" \
+  --set postgres.ssl=true \
   --set secrets.githubToken="<YOUR_GITHUB_TOKEN>" \
   --set secrets.backendSecret="<YOUR_BACKEND_SECRET>"
 ```
@@ -195,3 +199,4 @@ Key values in [helm/backstage/values.yaml](helm/backstage/values.yaml):
 | `postgres.createSecret` | `true` | Set to `false` if managing postgres secret outside Helm. |
 | `tls.enabled` | `true` | Enables TLS / HTTPS in Ingress. |
 | `tls.secretName` | `backstage-tls` | Kubernetes Secret containing ZeroSSL certificate. |
+# backstage-EKS-setup
