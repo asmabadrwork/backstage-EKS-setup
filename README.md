@@ -87,7 +87,7 @@ This repository contains the enterprise-grade production setup for the **Spotify
 
 ---
 
-##  Complete Setup Guide From Scratch (New EKS Cluster & New Server)
+##  Complete Setup Guide
 
 > **Important Note**: Because **GitHub Actions handles 100% of the building, containerization, and deployment**, your management server is strictly a lightweight **Infrastructure Bootstrap Machine**. You do not need to install Node.js, compile code, or store build artifacts on the server.
 
