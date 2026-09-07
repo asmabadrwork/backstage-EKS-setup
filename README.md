@@ -1,6 +1,6 @@
 # Spotify Backstage - Production Deployment on AWS EKS
 
-This repository contains the enterprise-grade production setup for the **Spotify Backstage Developer Portal** deployed on **AWS Elastic Kubernetes Service (EKS)** with **Amazon RDS PostgreSQL (Multi-AZ)**, **AWS Secrets Manager**, **External Secrets Operator (ESO)**, **Amazon ECR**, and **Nginx Ingress with ZeroSSL TLS encryption**.
+This repository contains the enterprise-grade production setup for the **Spotify Backstage Developer Portal** deployed on **AWS Elastic Kubernetes Service (EKS)** with **Amazon RDS PostgreSQL (Multi-AZ)**, **AWS Secrets Manager**, **External Secrets Operator (ESO)**, **Amazon ECR**, and **Nginx Ingress with TLS encryption**.
 
 ---
 
@@ -11,7 +11,7 @@ This repository contains the enterprise-grade production setup for the **Spotify
          │ (HTTPS / 443)
          ▼
 [ DNS (Hostinger / Route 53) ]
-         │
+         │ (CNAME: backstage.tyagi.fun)
          ▼
 [ AWS Network Load Balancer (NLB) ]
          │
@@ -23,7 +23,7 @@ This repository contains the enterprise-grade production setup for the **Spotify
 │ Amazon EKS Cluster (Kubernetes 1.32 - Multi-AZ: ap-south-1a, 1b, 1c)    │
 │                                                                        │
 │  [ Backstage Deployment ] ◄──► [ Horizontal Pod Autoscaler (HPA) ]     │
-│   ├── Pod 1 (AZ-a)             [ Pod Disruption Budget (PDB) ]         │
+│   ├── Pod 1 (AZ-a)             [ Pod Disruption Budget (minAvailable=2)│
 │   ├── Pod 2 (AZ-b)                                                     │
 │   └── Pod 3 (AZ-c)                                                     │
 │                                                                        │
@@ -42,13 +42,14 @@ This repository contains the enterprise-grade production setup for the **Spotify
 
 ### Core Technologies
 - **Application**: Spotify Backstage v1.x (Unified Frontend React UI + Node.js Backend)
-- **Runtime**: Node.js 22 LTS & Yarn Berry v4 Monorepo
+- **Runtime**: Node.js 22 LTS & Yarn Berry Monorepo
 - **Kubernetes**: AWS EKS v1.32 across 3 Availability Zones (`ap-south-1a`, `ap-south-1b`, `ap-south-1c`)
 - **Networking**: VPC `10.30.0.0/16` with Highly Available NAT Gateways (1 per AZ)
 - **Database**: Amazon RDS for PostgreSQL (Multi-AZ, SSL encrypted)
-- **Secrets Management**: AWS Secrets Manager synced via External Secrets Operator (ESO `v1`) with IAM Roles for Service Accounts (IRSA)
-- **Ingress & SSL**: Nginx Ingress Controller with ZeroSSL Full Chain TLS certificates
-- **Resilience**: Horizontal Pod Autoscaler (`hpa.yaml`), Pod Disruption Budget (`pdb.yaml`), and `topologySpreadConstraints` across zones
+- **Secrets Management**: AWS Secrets Manager synced via External Secrets Operator (ESO `v1`)
+- **Ingress & SSL**: Nginx Ingress Controller with TLS certificate secrets
+- **CI/CD**: GitHub Actions using native **AWS OIDC (Zero long-lived credentials, zero SSH bastions)**
+- **Resilience**: Horizontal Pod Autoscaler (`hpa.yaml`), Pod Disruption Budget (`pdb.yaml`), and rolling updates
 
 ---
 
@@ -57,8 +58,8 @@ This repository contains the enterprise-grade production setup for the **Spotify
 ```text
 .
 ├── .github/workflows/
-│   ├── ci.yml                 # CI: Secret scanning (Gitleaks), Type checking, Linting, Build
-│   └── cd.yml                 # CD: Automated Docker build, ECR push, and Helm upgrade
+│   ├── ci.yml                 # CI: Secret scanning (Gitleaks), Type checking, Linting, Config Check
+│   └── cd.yml                 # CD: Build bundle, Docker build, ECR push, and Helm deploy via AWS OIDC
 ├── helm/
 │   └── backstage/             # Production Helm Chart
 │       ├── Chart.yaml         # Chart metadata
@@ -67,11 +68,11 @@ This repository contains the enterprise-grade production setup for the **Spotify
 │           ├── _helpers.tpl   # Template helper macros
 │           ├── backstage.yaml # Deployment (HPA/HA) & ClusterIP Service
 │           ├── external-secrets.yaml # ESO SecretStore & ExternalSecret (v1)
-│           ├── hpa.yaml       # Horizontal Pod Autoscaler
+│           ├── hpa.yaml       # Horizontal Pod Autoscaler (min: 3, max: 10)
 │           ├── ingress.yaml   # Nginx Ingress with TLS
-│           ├── pdb.yaml       # Pod Disruption Budget
-│           ├── postgres-secrets.yaml # Fallback DB Secret generator
-│           └── secrets.yaml   # Fallback App Secret generator
+│           ├── pdb.yaml       # Pod Disruption Budget (minAvailable: 2)
+│           ├── postgres-secrets.yaml # DB Secret template
+│           └── secrets.yaml   # App Secret template
 ├── packages/
 │   ├── app/                   # Frontend React Single-Page Application
 │   └── backend/               # Backend Node.js Service (Catalog, Scaffolder, TechDocs, Search)
@@ -86,155 +87,169 @@ This repository contains the enterprise-grade production setup for the **Spotify
 
 ---
 
-## 🚀 End-to-End Setup Guide (From Scratch)
+## 🚀 Complete Setup Guide From Scratch (New EKS Cluster & New Server)
 
-### Step 1: Install Prerequisites on EC2 / Bastion Machine
-Log into an **Ubuntu 22.04 / 24.04** server and run:
+> **Important Note**: Because **GitHub Actions handles 100% of the building, containerization, and deployment**, your management server is strictly a lightweight **Infrastructure Bootstrap Machine**. You do not need to install Node.js, compile code, or store build artifacts on the server.
+
+---
+
+### Step 1: Provision & Setup Management Server (EC2)
+
+Launch a clean **Ubuntu 24.04 EC2 instance** (`t3.small` or `t3.medium`) with an IAM Role granting `AdministratorAccess` (or configure AWS credentials via `aws configure`).
+
+Run this script to install all required infrastructure tools:
 
 ```bash
-# 1. Base tools
-sudo apt-get update -y && sudo apt-get upgrade -y
-sudo apt-get install -y curl wget git jq unzip tar apt-transport-https ca-certificates gnupg
+#!/bin/bash
+set -e
+sudo apt-get update && sudo apt-get install -y curl unzip git jq ca-certificates
 
-# 2. AWS CLI v2
+# 1. AWS CLI v2
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip -q awscliv2.zip && sudo ./aws/install --update && rm -rf aws awscliv2.zip
+unzip -q awscliv2.zip && sudo ./aws/install && rm -rf aws awscliv2.zip
 
-# 3. Docker Engine
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update -y && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin
-sudo usermod -aG docker $USER && sudo systemctl enable --now docker
-
-# 4. Node.js 22 LTS & Yarn Berry v4
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt-get install -y nodejs
-sudo corepack enable && corepack prepare yarn@4.13.0 --activate
-
-# 5. kubectl (v1.32)
-curl -LO "https://dl.k8s.io/release/v1.32.0/bin/linux/amd64/kubectl"
+# 2. kubectl (v1.32)
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl && rm kubectl
 
-# 6. eksctl
-curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_Linux_amd64.tar.gz"
-tar -xzf "eksctl_Linux_amd64.tar.gz" -C /tmp && sudo mv /tmp/eksctl /usr/local/bin && rm "eksctl_Linux_amd64.tar.gz"
+# 3. eksctl
+ARCH=amd64
+curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$(uname -s)_$ARCH.tar.gz"
+tar -xzf "eksctl_$(uname -s)_$ARCH.tar.gz" -C /tmp && sudo mv /tmp/eksctl /usr/local/bin && rm "eksctl_$(uname -s)_$ARCH.tar.gz"
 
-# 7. Helm v3
-curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-chmod 700 get_helm.sh && ./get_helm.sh && rm get_helm.sh
+# 4. Helm v3
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-newgrp docker
+echo "--- Bootstrap Server Ready ---"
+aws --version && kubectl version --client && eksctl version && helm version
 ```
 
 ---
 
-### Step 2: Configure AWS CLI & Environment Variables
+### Step 2: Provision Multi-AZ EKS Cluster
+
+Clone your repository to access the cluster configuration:
 
 ```bash
-aws configure
-# Enter AWS Access Key, Secret Key, and Region: ap-south-1
-
-# Export environment variables
-export AWS_REGION="ap-south-1"
-export CLUSTER_NAME="backstage-production"
-export DOMAIN="backstage.yourdomain.com"
-export DB_PASSWORD="YourStrongSecurePassword123!"
-export GITHUB_TOKEN="ghp_yourActualGitHubToken"
-export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query "Account" --output text)
+git clone https://github.com/asmabadrwork/backstage-EKS-setup.git
+cd backstage-EKS-setup
 ```
 
----
+Create the EKS cluster using `eksctl`:
 
-### Step 3: Provision Multi-AZ EKS Cluster
-
-From the repository root:
 ```bash
 eksctl create cluster -f eks-cluster.yaml
 ```
-*(Provisions 3 worker nodes across 3 AZs with EBS CSI driver and HA NAT Gateways in ~15 minutes)*.
 
-Verify:
+*What this provisions:*
+- Production VPC `10.30.0.0/16` with **3 High-Availability NAT Gateways** across 3 Availability Zones.
+- Kubernetes 1.32 Control Plane named `backstage-production`.
+- **3 worker nodes (`t3.large`)** spread across `ap-south-1a`, `ap-south-1b`, `ap-south-1c`.
+- EBS CSI Driver, VPC CNI, and CoreDNS add-ons.
+
+Configure `kubectl` access:
 ```bash
+aws eks update-kubeconfig --name backstage-production --region ap-south-1
 kubectl get nodes -o wide
 ```
 
 ---
 
-### Step 4: Provision Amazon RDS for PostgreSQL (Multi-AZ)
+### Step 3: Provision Amazon RDS PostgreSQL (Multi-AZ)
+
+Backstage requires an external PostgreSQL database with SSL enabled.
 
 ```bash
-# 1. Get EKS VPC ID
-VPC_ID=$(aws eks describe-cluster --name $CLUSTER_NAME --region $AWS_REGION --query "cluster.resourcesVpcConfig.vpcId" --output text)
+# 1. Fetch VPC ID & Private Subnets created by eksctl
+VPC_ID=$(aws eks describe-cluster --name backstage-production --query 'cluster.resourcesVpcConfig.vpcId' --output text)
+SUBNETS=$(aws ec2 describe-subnets \
+  --filters "Name=vpc-id,Values=$VPC_ID" \
+  --query "Subnets[?MapPublicIpOnLaunch==\`false\`].SubnetId" --output text | tr '\t' ' ')
 
-# 2. Create Security Group for RDS
+# 2. Create DB Subnet Group
+aws rds create-db-subnet-group \
+  --db-subnet-group-name backstage-rds-subnets \
+  --db-subnet-group-description "Subnet group for Backstage RDS" \
+  --subnet-ids $SUBNETS \
+  --region ap-south-1
+
+# 3. Create Security Group allowing port 5432 from EKS VPC
 RDS_SG_ID=$(aws ec2 create-security-group \
   --group-name backstage-rds-sg \
-  --description "Security group for Backstage RDS" \
+  --description "Allow Postgres from EKS VPC" \
   --vpc-id $VPC_ID \
-  --region $AWS_REGION \
-  --query "GroupId" --output text)
+  --output text --query 'GroupId')
 
-# Allow port 5432 from EKS VPC CIDR
 aws ec2 authorize-security-group-ingress \
   --group-id $RDS_SG_ID \
-  --protocol tcp \
-  --port 5432 \
-  --cidr 10.30.0.0/16 \
-  --region $AWS_REGION
+  --protocol tcp --port 5432 \
+  --cidr 10.30.0.0/16
 
-# 3. Create DB Subnet Group across private subnets
-PRIVATE_SUBNETS=$(aws ec2 describe-subnets \
-  --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:kubernetes.io/role/internal-elb,Values=1" \
-  --region $AWS_REGION \
-  --query "Subnets[*].SubnetId" --output text)
-
-aws rds create-db-subnet-group \
-  --db-subnet-group-name backstage-db-subnets \
-  --db-subnet-group-description "Private subnets for Backstage RDS" \
-  --subnet-ids $PRIVATE_SUBNETS \
-  --region $AWS_REGION
-
-# 4. Fetch latest PostgreSQL 15 minor version
-PG_VERSION=$(aws rds describe-db-engine-versions \
-  --engine postgres \
-  --region $AWS_REGION \
-  --query "reverse(sort(DBEngineVersions[?starts_with(EngineVersion, '15.')].EngineVersion))[0]" \
-  --output text)
-
-# 5. Launch Multi-AZ RDS Instance
+# 4. Create Multi-AZ PostgreSQL 15 Instance
 aws rds create-db-instance \
   --db-instance-identifier backstage-production-db \
-  --db-instance-class db.t4g.medium \
+  --db-instance-class db.t3.medium \
   --engine postgres \
-  --engine-version $PG_VERSION \
+  --engine-version 15.7 \
+  --allocated-storage 50 \
+  --storage-type gp3 \
   --master-username backstage \
-  --master-user-password "$DB_PASSWORD" \
-  --allocated-storage 20 \
-  --max-allocated-storage 100 \
-  --db-name postgres \
+  --master-user-password "YourStrongPasswordHere123!" \
+  --db-subnet-group-name backstage-rds-subnets \
   --vpc-security-group-ids $RDS_SG_ID \
-  --db-subnet-group-name backstage-db-subnets \
   --multi-az \
-  --storage-encrypted \
+  --backup-retention-period 7 \
   --no-publicly-accessible \
-  --region $AWS_REGION
+  --region ap-south-1
 ```
 
-Capture the RDS endpoint once available:
+Retrieve the RDS endpoint once available:
 ```bash
-export RDS_ENDPOINT=$(aws rds describe-db-instances \
+RDS_ENDPOINT=$(aws rds describe-db-instances \
   --db-instance-identifier backstage-production-db \
-  --region $AWS_REGION \
-  --query "DBInstances[0].Endpoint.Address" --output text)
+  --query 'DBInstances[0].Endpoint.Address' --output text)
 echo "RDS Endpoint: $RDS_ENDPOINT"
 ```
 
 ---
 
-### Step 5: Install Ingress Controller & Configure DNS
+### Step 4: Configure AWS Secrets Manager & External Secrets Operator (ESO)
 
+#### 1. Store Application Secrets in AWS Secrets Manager
+```bash
+BACKEND_SECRET=$(openssl rand -hex 24)
+
+aws secretsmanager create-secret \
+  --name "production/backstage" \
+  --description "Backstage production credentials" \
+  --secret-string "{
+    \"POSTGRES_HOST\": \"$RDS_ENDPOINT\",
+    \"POSTGRES_PORT\": \"5432\",
+    \"POSTGRES_USER\": \"backstage\",
+    \"POSTGRES_PASSWORD\": \"YourStrongPasswordHere123!\",
+    \"POSTGRES_DATABASE\": \"postgres\",
+    \"BACKEND_SECRET\": \"$BACKEND_SECRET\",
+    \"GITHUB_TOKEN\": \"ghp_yourPersonalAccessTokenHere\"
+  }" \
+  --region ap-south-1
+```
+
+#### 2. Install External Secrets Operator (v1)
+```bash
+helm repo add external-secrets https://charts.external-secrets.io
+helm repo update
+
+helm install external-secrets external-secrets/external-secrets \
+  -n external-secrets \
+  --create-namespace \
+  --set installCRDs=true
+```
+
+---
+
+### Step 5: Install Ingress Controller, DNS & TLS Certificate
+
+#### 1. Install Nginx Ingress Controller
 ```bash
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
 helm repo update
@@ -242,166 +257,53 @@ helm repo update
 helm install ingress-nginx ingress-nginx/ingress-nginx \
   --namespace ingress-nginx \
   --create-namespace \
-  --set controller.service.type=LoadBalancer
-
-# Get AWS Load Balancer Hostname
-export INGRESS_HOST=$(kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-echo "Point your DNS CNAME to: $INGRESS_HOST"
+  --set controller.service.annotations."service\.beta\.kubernetes\.io/aws-load-balancer-type"="nlb"
 ```
 
-> **DNS Action**: In your DNS provider (Hostinger, Cloudflare, Route53), create a **CNAME** record:
-> - **Host/Name**: `backstage`
-> - **Target/Content**: `$INGRESS_HOST`
-
----
-
-### Step 6: Configure ZeroSSL Certificates
-
+#### 2. Configure DNS CNAME
+Get the AWS Load Balancer hostname:
 ```bash
-kubectl create namespace backstage
+kubectl get svc -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+```
+In your DNS provider (Hostinger, Cloudflare, Route53):
+- Add a **CNAME** record:
+  - **Host / Name**: `backstage` (for `backstage.tyagi.fun`)
+  - **Target / Value**: The Load Balancer hostname output above.
 
-# Create full certificate chain (Domain Certificate + ZeroSSL CA Bundle)
-cat certificate.crt ca_bundle.crt > fullchain.crt
+#### 3. Deploy TLS Secret
+```bash
+kubectl create namespace backstage || true
 
-# Create Kubernetes TLS Secret
+# Deploy your SSL certificate chain (combined domain certificate + intermediate CA)
 kubectl create secret tls backstage-tls \
-  --cert=fullchain.crt \
-  --key=private.key \
+  --cert=/path/to/fullchain.crt \
+  --key=/path/to/private.key \
   --namespace backstage
 ```
 
 ---
 
-### Step 7: Build & Push Backstage to Amazon ECR
+### Step 6: Configure ECR & AWS OIDC for GitHub Actions (Zero Static Credentials)
+
+This grants GitHub Actions permission to authenticate directly with AWS STS, build and push Docker containers to ECR, and execute Helm deployments to EKS.
 
 ```bash
-# 1. Create ECR Repository
-aws ecr create-repository --repository-name backstage --region $AWS_REGION --image-scanning-configuration scanOnPush=true || true
+ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
+REGION="ap-south-1"
 
-# 2. Authenticate Docker with ECR
-aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+# 1. Create Amazon ECR Repository
+aws ecr create-repository \
+  --repository-name backstage \
+  --region $REGION \
+  --image-scanning-configuration scanOnPush=true || true
 
-# 3. Build Monorepo Release Artifacts & Docker Container
-yarn install --immutable
-yarn tsc
-yarn build:backend
-docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/backstage:1.0.0 .
-docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/backstage:1.0.0
-
-# 4. Create Kubernetes ImagePullSecret
-kubectl create secret docker-registry ecr-secret \
-  --docker-server=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com \
-  --docker-username=AWS \
-  --docker-password=$(aws ecr get-login-password --region $AWS_REGION) \
-  --namespace backstage
-```
-
----
-
-### Step 8: Configure AWS Secrets Manager & External Secrets Operator (ESO)
-
-```bash
-# 1. Create/Update Secret in AWS Secrets Manager
-export BACKEND_SECRET=$(openssl rand -base64 32)
-
-aws secretsmanager create-secret \
-  --name "production/backstage" \
-  --region $AWS_REGION \
-  --secret-string "{
-    \"POSTGRES_USER\": \"backstage\",
-    \"POSTGRES_PASSWORD\": \"$DB_PASSWORD\",
-    \"GITHUB_TOKEN\": \"$GITHUB_TOKEN\",
-    \"BACKEND_SECRET\": \"$BACKEND_SECRET\"
-  }" 2>/dev/null || \
-aws secretsmanager put-secret-value \
-  --secret-id "production/backstage" \
-  --region $AWS_REGION \
-  --secret-string "{
-    \"POSTGRES_USER\": \"backstage\",
-    \"POSTGRES_PASSWORD\": \"$DB_PASSWORD\",
-    \"GITHUB_TOKEN\": \"$GITHUB_TOKEN\",
-    \"BACKEND_SECRET\": \"$BACKEND_SECRET\"
-  }"
-
-# 2. Install External Secrets Operator (v1 CRDs)
-helm repo add external-secrets https://charts.external-secrets.io
-helm repo update
-helm install external-secrets external-secrets/external-secrets \
-  --namespace external-secrets \
-  --create-namespace \
-  --set installCRDs=true
-
-# 3. Enable IRSA (IAM Roles for Service Accounts)
-eksctl utils associate-iam-oidc-provider --cluster $CLUSTER_NAME --region $AWS_REGION --approve
-
-eksctl create iamserviceaccount \
-  --name external-secrets-sa \
-  --namespace backstage \
-  --cluster $CLUSTER_NAME \
-  --region $AWS_REGION \
-  --attach-policy-arn arn:aws:iam::aws:policy/SecretsManagerReadWrite \
-  --approve
-```
-
----
-
-### Step 9: Deploy Backstage with Helm
-
-Deploy Backstage using external PostgreSQL and External Secrets Operator:
-
-```bash
-helm upgrade --install backstage ./helm/backstage \
-  --namespace backstage \
-  --set domain="$DOMAIN" \
-  --set backstage.image.repository="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/backstage" \
-  --set backstage.image.tag="1.0.0" \
-  --set postgres.host="$RDS_ENDPOINT" \
-  --set postgres.port=5432 \
-  --set postgres.user="backstage" \
-  --set postgres.database="postgres" \
-  --set postgres.ssl=true \
-  --set externalSecrets.enabled=true \
-  --set secrets.create=false \
-  --set postgres.createSecret=false
-```
-
----
-
-### Step 10: Verification & Smoke Testing
-
-```bash
-# 1. Check Pod status across 3 AZs
-kubectl get pods -n backstage -o wide
-
-# 2. Check ExternalSecret sync status
-kubectl get externalsecret -n backstage
-
-# 3. View live application logs (DB migrations & HTTP routes)
-kubectl logs -f deployment/backstage -n backstage -c backstage
-
-# 4. Check Ingress status
-kubectl get ingress -n backstage
-```
-
-Open **`https://<YOUR_DOMAIN>`** in your browser. The ZeroSSL secure padlock will appear, allowing you to log in via **Guest mode** and browse your Software Catalog!
-
----
-
-## 🔄 Automated CI/CD Pipeline (GitHub Actions + AWS OIDC)
-
-Continuous deployment is handled natively via GitHub Actions in [.github/workflows/cd.yml](.github/workflows/cd.yml) with **zero long-lived AWS keys and zero SSH bastions**.
-
-### 1. Configure GitHub Actions OIDC in AWS
-Run these commands on your EC2 or workstation to authorize GitHub Actions:
-
-```bash
-# 1. Create GitHub OIDC Identity Provider in AWS IAM (if not already existing)
+# 2. Register GitHub OIDC Provider with official TLS thumbprints
 aws iam create-open-id-connect-provider \
-  --url https://token.actions.githubusercontent.com \
-  --client-id-list sts.amazonaws.com \
-  --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1 1c58a3a8518e8759bf075b76b750d4f8d264fcd9 2>/dev/null || true
+  --url "https://token.actions.githubusercontent.com" \
+  --client-id-list "sts.amazonaws.com" \
+  --thumbprint-list "6938fd4d98bab03faadb97b34396831e3780aea1" "1c5860a5f6ec55543956db1999d8079542a10f0e" 2>/dev/null || true
 
-# 2. Create IAM Role Trust Policy for your repository
+# 3. Create IAM Role with AWS-compliant scoped Trust Policy
 cat <<EOF > /tmp/github-oidc-trust.json
 {
   "Version": "2012-10-17",
@@ -409,7 +311,7 @@ cat <<EOF > /tmp/github-oidc-trust.json
     {
       "Effect": "Allow",
       "Principal": {
-        "Federated": "arn:aws:iam::$AWS_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
+        "Federated": "arn:aws:iam::$ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
       },
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
@@ -417,7 +319,11 @@ cat <<EOF > /tmp/github-oidc-trust.json
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:asmabadrwork/backstage-EKS-setup:*"
+          "token.actions.githubusercontent.com:sub": [
+            "repo:asmabadrwork@215350865/backstage-EKS-setup@1359842655:*",
+            "repo:asmabadrwork*:*",
+            "repo:asmabadrwork/backstage-EKS-setup:*"
+          ]
         }
       }
     }
@@ -425,7 +331,6 @@ cat <<EOF > /tmp/github-oidc-trust.json
 }
 EOF
 
-# 3. Create the Deployer IAM Role
 aws iam create-role \
   --role-name github-actions-backstage-cd \
   --assume-role-policy-document file:///tmp/github-oidc-trust.json
@@ -435,7 +340,7 @@ aws iam attach-role-policy \
   --role-name github-actions-backstage-cd \
   --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
 
-# 5. Attach EKS Cluster Describe Permission
+# 5. Attach EKS Describe Permission
 cat <<EOF > /tmp/eks-describe-policy.json
 {
   "Version": "2012-10-17",
@@ -443,7 +348,7 @@ cat <<EOF > /tmp/eks-describe-policy.json
     {
       "Effect": "Allow",
       "Action": ["eks:DescribeCluster"],
-      "Resource": "arn:aws:eks:$AWS_REGION:$AWS_ACCOUNT_ID:cluster/$CLUSTER_NAME"
+      "Resource": "arn:aws:eks:$REGION:$ACCOUNT_ID:cluster/backstage-production"
     }
   ]
 }
@@ -454,48 +359,85 @@ aws iam put-role-policy \
   --policy-name EKSDescribeCluster \
   --policy-document file:///tmp/eks-describe-policy.json
 
-# 6. Grant Deployer Role Access to EKS Cluster
+# 6. Grant Role Admin Access to EKS via Access Entries
 aws eks create-access-entry \
-  --cluster-name $CLUSTER_NAME \
-  --principal-arn arn:aws:iam::$AWS_ACCOUNT_ID:role/github-actions-backstage-cd \
+  --cluster-name backstage-production \
+  --principal-arn arn:aws:iam::$ACCOUNT_ID:role/github-actions-backstage-cd \
   --type STANDARD \
-  --region $AWS_REGION
+  --region $REGION
 
 aws eks associate-access-policy \
-  --cluster-name $CLUSTER_NAME \
-  --principal-arn arn:aws:iam::$AWS_ACCOUNT_ID:role/github-actions-backstage-cd \
+  --cluster-name backstage-production \
+  --principal-arn arn:aws:iam::$ACCOUNT_ID:role/github-actions-backstage-cd \
   --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy \
   --access-scope type=cluster \
-  --region $AWS_REGION
+  --region $REGION
+
+echo "Role created: arn:aws:iam::$ACCOUNT_ID:role/github-actions-backstage-cd"
 ```
 
-### 2. Configure GitHub Repository Secret
-Go to **GitHub Repository** ➔ **Settings** ➔ **Secrets and variables** ➔ **Actions**:
-- Add Secret: `AWS_ROLE_ARN` = `arn:aws:iam::<AWS_ACCOUNT_ID>:role/github-actions-backstage-cd`
-
-Every time code is pushed to `main`, GitHub Actions will:
-1. Scan for leaked secrets using Gitleaks.
-2. Run TypeScript checks, linting, and Backstage config checks.
-3. Build the backend bundle.
-4. Assume the AWS IAM role via OIDC and push the container to Amazon ECR.
-5. Connect directly to Amazon EKS and execute `helm upgrade` with rolling zero-downtime deployment!
+#### 7. Add GitHub Actions Secret
+In GitHub: **Settings** ➔ **Secrets and variables** ➔ **Actions** ➔ **New repository secret**:
+- **Name**: `AWS_ROLE_ARN`
+- **Value**: `arn:aws:iam::<ACCOUNT_ID>:role/github-actions-backstage-cd`
 
 ---
 
-## 🛠️ Helm Values Reference
+### Step 7: Trigger Automated CI/CD Deployment
 
-| Parameter | Default | Description |
-| :--- | :--- | :--- |
-| `domain` | `example.com` | Primary application domain used by Ingress & BaseURL. |
-| `backstage.replicaCount` | `3` | Number of HA pod replicas. |
-| `backstage.image.repository` | `<ECR_REPO_URL>` | Amazon ECR container repository. |
-| `backstage.image.tag` | `1.0.0` | Container image tag. |
-| `backstage.service.port` | `80` | ClusterIP service port. |
-| `backstage.service.targetPort`| `7007` | Backend container listening port. |
-| `postgres.host` | `""` | Amazon RDS PostgreSQL endpoint address. |
-| `postgres.ssl` | `true` | Enables encrypted TLS connection to AWS RDS. |
-| `postgres.createSecret` | `true` | Set to `false` when using External Secrets Operator. |
-| `externalSecrets.enabled` | `false` | Enables AWS Secrets Manager sync via ESO (v1). |
-| `externalSecrets.awsSecretName` | `"production/backstage"` | Secret name in AWS Secrets Manager. |
-| `tls.enabled` | `true` | Enables TLS termination in Ingress. |
-| `tls.secretName` | `backstage-tls` | Secret containing TLS certificate and private key. |
+From your local machine or workstation:
+1. Ensure `helm/backstage/values.yaml` points to your RDS endpoint and domain name.
+2. Commit and push:
+   ```bash
+   git add .
+   git commit -m "feat: trigger initial production deployment"
+   git push origin main
+   ```
+
+**GitHub Actions automatically executes:**
+1. **Secret Scanning**: Runs Gitleaks across commit history.
+2. **Code Validation**: Executes TypeScript type checks and linting.
+3. **Config Check**: Validates `app-config.yaml` and `app-config.production.yaml`.
+4. **Build Release Bundle**: Compiles the React UI and backend into `dist/skeleton.tar.gz` and `dist/bundle.tar.gz`.
+5. **Push to ECR**: Authenticates via AWS OIDC, builds the Docker image, and pushes to Amazon ECR.
+6. **Deploy to EKS**: Assumes the OIDC role, updates `kubeconfig`, and runs `helm upgrade --install` with rolling zero-downtime updates!
+
+---
+
+### Step 8: Verification & Smoke Testing
+
+Run from your server or configured local terminal:
+
+```bash
+# 1. Verify Pods across AZs (should show 3-4 Running pods)
+kubectl get pods -n backstage -o wide
+
+# 2. Check Ingress status
+kubectl get ingress -n backstage
+
+# 3. Check Horizontal Pod Autoscaler
+kubectl get hpa -n backstage
+
+# 4. View live application logs
+kubectl logs -f deployment/backstage -n backstage -c backstage
+```
+
+Open your browser:
+👉 **`https://backstage.tyagi.fun`**
+- Click **"Enter as Guest"**.
+- Your highly available, multi-AZ Spotify Backstage developer portal is live!
+
+---
+
+## 🛡️ High Availability, Resilience & Pod Capacity
+
+### 1. What happens if 1 worker node goes down?
+- **Zero Downtime**: Backstage runs with `minAvailable: 2` in [pdb.yaml](helm/backstage/templates/pdb.yaml). Surviving pods in other Availability Zones immediately handle user traffic.
+- **Auto-Healing**: Kubernetes Scheduler instantly schedules replacement pods on surviving nodes.
+- **Hardware Replacement**: AWS Auto Scaling Group automatically launches a new EC2 instance to restore the 3-node multi-AZ cluster.
+- **Database Persistence**: AWS RDS PostgreSQL Multi-AZ is completely independent of the Kubernetes nodes, ensuring zero data loss.
+
+### 2. Node Pod Capacity (`t3.large`):
+- **AWS VPC CNI Limit**: Each `t3.large` instance supports **35 pods maximum** (determined by ENI and IP allocation formula: `3 ENIs * (12 IPs - 1) + 2 = 35`).
+- **Compute Capacity**: Based on Backstage requests (`250m` CPU, `512Mi` RAM), each node comfortably hosts **6 to 7 Backstage pods** in addition to system daemonsets.
+- **Total Capacity across 3 nodes**: **~18 to 20 Backstage pods**, automatically scaled by HPA between 3 and 10 replicas.
