@@ -1,12 +1,16 @@
-name: Backstage CD Production Deployment
+name: Backstage CI/CD Pipeline
 
 on:
   push:
     branches:
       - main
       - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
 
-# Permissions required for AWS OIDC authentication & checkout
 permissions:
   id-token: write
   contents: read
@@ -20,9 +24,102 @@ env:
   K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'backstage' }}
 
 jobs:
-  # STAGE 1: Build Release Bundle
+  # =========================================================================
+  # STAGE 1: CI VERIFICATION & CODE QUALITY (Runs on PR & Push)
+  # =========================================================================
+
+  secret-scanning:
+    name: Secret Scanning (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Run Gitleaks Secret Scanner
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  lint-and-quality:
+    name: Lint & Code Quality
+    needs: secret-scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'yarn'
+      - name: Install Dependencies
+        run: yarn install --immutable
+      - name: Linting (repo lint)
+        run: yarn backstage-cli repo lint
+      - name: Deprecations Check (list-deprecations)
+        run: yarn backstage-cli repo list-deprecations
+
+  typecheck:
+    name: TypeScript Type Check
+    needs: secret-scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'yarn'
+      - name: Install Dependencies
+        run: yarn install --immutable
+      - name: Type Checking (tsc:full)
+        run: yarn tsc:full
+
+  test:
+    name: Unit & Integration Tests
+    needs: secret-scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'yarn'
+      - name: Install Dependencies
+        run: yarn install --immutable
+      - name: Run Tests (repo test)
+        run: yarn backstage-cli repo test
+
+  config-check:
+    name: App Config Validation
+    needs: secret-scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'yarn'
+      - name: Install Dependencies
+        run: yarn install --immutable
+      - name: Config Validation (config:check)
+        run: |
+          yarn backstage-cli config:check --lax --strict \
+            --config app-config.yaml \
+            --config app-config.production.yaml
+
+  # =========================================================================
+  # STAGE 2: CD PRODUCTION DEPLOYMENT (Runs ONLY on push to main/master)
+  # =========================================================================
+
   build-bundle:
     name: Build Release Bundle
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [lint-and-quality, typecheck, test, config-check]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -42,9 +139,9 @@ jobs:
           name: backend-dist
           path: packages/backend/dist/
 
-  # STAGE 2: Build Docker Container & Push to Amazon ECR via AWS OIDC
   push-ecr:
     name: Push to Amazon ECR
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: build-bundle
     runs-on: ubuntu-latest
     outputs:
@@ -60,7 +157,6 @@ jobs:
           name: backend-dist
           path: packages/backend/dist/
 
-      # Authenticate with AWS via OIDC (No static credentials)
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -80,9 +176,9 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-  # STAGE 3: Deploy to Amazon EKS Cluster via Helm & OIDC
   deploy-eks:
     name: Deploy to EKS (Helm)
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     needs: push-ecr
     runs-on: ubuntu-latest
     steps:
@@ -99,7 +195,6 @@ jobs:
         with:
           version: 'v1.32.0'
 
-      # Authenticate with AWS via OIDC
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
