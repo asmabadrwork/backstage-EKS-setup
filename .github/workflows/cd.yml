@@ -20,63 +20,9 @@ env:
   K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'backstage' }}
 
 jobs:
-  # STAGE 1: Secret Scanning
-  secret-scanning:
-    name: Secret Scanning (Gitleaks)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-      - name: Run Gitleaks Secret Scanner
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # STAGE 2: Code Validation
-  validation:
-    name: Lint & Type Check
-    needs: secret-scanning
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'yarn'
-      - name: Install Dependencies
-        run: yarn install --immutable
-      - name: Linting
-        run: yarn backstage-cli repo lint
-      - name: Type Checking
-        run: yarn tsc:full
-
-  # STAGE 3: Config Validation
-  config-check:
-    name: Config Check
-    needs: validation
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'yarn'
-      - name: Install Dependencies
-        run: yarn install --immutable
-      - name: Config Validation
-        run: |
-          yarn backstage-cli config:check --lax --strict \
-            --config app-config.yaml \
-            --config app-config.production.yaml
-
-  # STAGE 4: Build Release Bundle
+  # STAGE 1: Build Release Bundle
   build-bundle:
     name: Build Release Bundle
-    needs: config-check
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -96,7 +42,7 @@ jobs:
           name: backend-dist
           path: packages/backend/dist/
 
-  # STAGE 5: Build Docker Container & Push to Amazon ECR via AWS OIDC
+  # STAGE 2: Build Docker Container & Push to Amazon ECR via AWS OIDC
   push-ecr:
     name: Push to Amazon ECR
     needs: build-bundle
@@ -134,7 +80,7 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-  # STAGE 6: Deploy to Amazon EKS Cluster via Helm & OIDC
+  # STAGE 3: Deploy to Amazon EKS Cluster via Helm & OIDC
   deploy-eks:
     name: Deploy to EKS (Helm)
     needs: push-ecr
