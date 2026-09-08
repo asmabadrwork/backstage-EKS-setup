@@ -28,42 +28,97 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # STAGE 2: Code Validation & Quality Checks
-  verify:
-    name: Run Official Backstage Checks
+  # STAGE 2A: Code Linting & Deprecations
+  lint-and-quality:
+    name: Lint & Code Quality
     needs: secret-scanning
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'yarn'
-
       - name: Install Dependencies
         run: yarn install --immutable
-
       - name: Linting (repo lint)
         run: yarn backstage-cli repo lint
-
-      - name: Type Checking (tsc:full)
-        run: yarn tsc:full
-
       - name: Deprecations Check (list-deprecations)
         run: yarn backstage-cli repo list-deprecations
 
+  # STAGE 2B: Type Checking
+  typecheck:
+    name: TypeScript Type Check
+    needs: secret-scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'yarn'
+      - name: Install Dependencies
+        run: yarn install --immutable
+      - name: Type Checking (tsc:full)
+        run: yarn tsc:full
+
+  # STAGE 2C: Automated Unit Tests
+  test:
+    name: Unit & Integration Tests
+    needs: secret-scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'yarn'
+      - name: Install Dependencies
+        run: yarn install --immutable
       - name: Run Tests (repo test)
         run: yarn backstage-cli repo test
 
+  # STAGE 2D: Configuration Validation
+  config-check:
+    name: App Config Validation
+    needs: secret-scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'yarn'
+      - name: Install Dependencies
+        run: yarn install --immutable
       - name: Config Validation (config:check)
         run: |
           yarn backstage-cli config:check --lax --strict \
             --config app-config.yaml \
             --config app-config.production.yaml
 
+  # STAGE 3: Build Verification
+  build-verification:
+    name: Build Release Packages
+    needs: [lint-and-quality, typecheck, test, config-check]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'yarn'
+      - name: Install Dependencies
+        run: yarn install --immutable
       - name: Build All Packages (yarn build:all)
         run: yarn build:all
