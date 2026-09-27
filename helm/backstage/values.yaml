@@ -23,11 +23,11 @@ backstage:
       memory: 512Mi
   probes:
     liveness:
-      path: /healthcheck
+      path: /.well-known/healthcheck
       initialDelaySeconds: 60
       periodSeconds: 15
     readiness:
-      path: /healthcheck
+      path: /.well-known/healthcheck
       initialDelaySeconds: 30
       periodSeconds: 10
 
@@ -52,6 +52,8 @@ secrets:
   name: backstage-secrets
   githubToken: ""
   backendSecret: ""
+  authOidcClientId: "backstage"
+  authOidcClientSecret: ""
 
 # AWS Secrets Manager Integration (External Secrets Operator)
 externalSecrets:

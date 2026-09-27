@@ -44,7 +44,7 @@ This repository contains the enterprise-grade production setup for the **Spotify
 - **Application**: Spotify Backstage v1.x (Unified Frontend React UI + Node.js Backend)
 - **Runtime**: Node.js 22 LTS & Yarn Berry Monorepo
 - **Kubernetes**: AWS EKS v1.32 across 3 Availability Zones (`ap-south-1a`, `ap-south-1b`, `ap-south-1c`)
-- **Networking**: VPC `10.30.0.0/16` with Highly Available NAT Gateways (1 per AZ)
+- **Networking**: VPC `10.30.0.0/16` with Single NAT Gateway (Cost-optimized)
 - **Database**: Amazon RDS for PostgreSQL (Multi-AZ, SSL encrypted)
 - **Secrets Management**: AWS Secrets Manager synced via External Secrets Operator (ESO `v1`)
 - **Ingress & SSL**: Nginx Ingress Controller with TLS certificate secrets
@@ -142,7 +142,7 @@ eksctl create cluster -f eks-cluster.yaml
 ```
 
 *What this provisions:*
-- Production VPC `10.30.0.0/16` with **3 High-Availability NAT Gateways** across 3 Availability Zones.
+- Production VPC `10.30.0.0/16` with **1 Cost-Optimized NAT Gateway** across 3 Availability Zones.
 - Kubernetes 1.32 Control Plane named `backstage-production`.
 - **3 worker nodes (`t3.large`)** spread across `ap-south-1a`, `ap-south-1b`, `ap-south-1c`.
 - EBS CSI Driver, VPC CNI, and CoreDNS add-ons.

@@ -14,8 +14,17 @@ availabilityZones:
 
 vpc:
   cidr: "10.30.0.0/16"
+  subnets:
+    public:
+      ap-south-1a: { cidr: "10.30.0.0/20" }
+      ap-south-1b: { cidr: "10.30.16.0/20" }
+      ap-south-1c: { cidr: "10.30.32.0/20" }
+    private:
+      ap-south-1a: { cidr: "10.30.64.0/18" }
+      ap-south-1b: { cidr: "10.30.128.0/18" }
+      ap-south-1c: { cidr: "10.30.192.0/18" }
   nat:
-    gateway: HighlyAvailable # 1 NAT Gateway per AZ for true 99.99% multi-AZ resilience
+    gateway: Single # 1 NAT Gateway shared across subnets to optimize AWS infrastructure costs
 
 managedNodeGroups:
   - name: backstage-workers-multi-az

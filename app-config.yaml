@@ -166,9 +166,21 @@ techdocs:
 
 auth:
   # see https://backstage.io/docs/auth/ to learn about auth providers
+  environment: ${AUTH_ENVIRONMENT:development}
   providers:
     # See https://backstage.io/docs/auth/guest/provider
     guest: {}
+    oidc:
+      production:
+        metadataUrl: ${AUTH_OIDC_METADATA_URL:https://keycloak.tyagi.fun/realms/backstage/.well-known/openid-configuration}
+        clientId: ${AUTH_OIDC_CLIENT_ID}
+        clientSecret: ${AUTH_OIDC_CLIENT_SECRET}
+        prompt: auto
+        signIn:
+          resolvers:
+            - resolver: preferredUsernameMatchingUserEntityAnnotation
+            - resolver: emailMatchingUserEntityProfileEmail
+            - resolver: emailLocalPartMatchingUserEntityName
   # see https://backstage.io/docs/ai/mcp-actions#client-id-metadata-documents
   # to learn more about client id metadata documents
   clientIdMetadataDocuments:
