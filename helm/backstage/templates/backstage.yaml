@@ -62,6 +62,8 @@ spec:
               value: {{ .Values.postgres.database | quote }}
             - name: POSTGRES_SSL
               value: {{ .Values.postgres.ssl | quote }}
+            - name: NODE_OPTIONS
+              value: "--dns-result-order=ipv4first"
           readinessProbe:
             httpGet:
               path: {{ .Values.backstage.probes.readiness.path }}

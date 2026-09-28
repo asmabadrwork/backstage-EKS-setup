@@ -1,12 +1,12 @@
 # Production Domain Configuration
-domain: example.com
+domain: ""
 
 # Backstage Application Configuration
 backstage:
   replicaCount: 3
   image:
-    repository: <AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/backstage
-    tag: 1.0.0
+    repository: ""
+    tag: ""
     pullPolicy: Always
   imagePullSecrets:
     - name: ecr-secret
@@ -33,11 +33,11 @@ backstage:
 
 # Amazon RDS for PostgreSQL Database Configuration (Multi-AZ)
 postgres:
-  createSecret: true # Set to false when using External Secrets Operator (AWS Secrets Manager)
-  host: "<AWS_RDS_ENDPOINT>.ap-south-1.rds.amazonaws.com"
+  createSecret: false # Set to false when using External Secrets Operator (AWS Secrets Manager)
+  host: ""
   port: 5432
-  user: backstage
-  password: "change-me-in-production"
+  user: ""
+  password: ""
   database: postgres
   ssl: true
 
@@ -48,7 +48,7 @@ tls:
 
 # Application Secrets Management
 secrets:
-  create: true # Set to false when using externalSecrets (AWS Secrets Manager)
+  create: false # Set to false when using externalSecrets (AWS Secrets Manager)
   name: backstage-secrets
   githubToken: ""
   backendSecret: ""
@@ -57,7 +57,7 @@ secrets:
 
 # AWS Secrets Manager Integration (External Secrets Operator)
 externalSecrets:
-  enabled: false # Set to true when syncing secrets directly from AWS Secrets Manager
+  enabled: true # Set to true when syncing secrets directly from AWS Secrets Manager
   awsSecretName: "production/backstage"
   secretStore:
     name: aws-secrets-manager

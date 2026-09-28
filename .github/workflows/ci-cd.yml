@@ -209,9 +209,17 @@ jobs:
 
       - name: Deploy Backstage via Helm
         run: |
-          helm upgrade backstage ./helm/backstage \
+          helm upgrade --install backstage ./helm/backstage \
             --namespace ${{ env.K8S_NAMESPACE }} \
-            --reuse-values \
+            --create-namespace \
+            --set domain=${{ vars.DOMAIN || 'backstage.tyagi.fun' }} \
+            --set postgres.host=${{ vars.POSTGRES_HOST }} \
+            --set postgres.user=${{ vars.POSTGRES_USER || 'keycloakadmin' }} \
+            --set postgres.createSecret=false \
+            --set secrets.create=false \
+            --set externalSecrets.enabled=true \
+            --set externalSecrets.awsSecretName=${{ vars.AWS_SECRET_NAME || 'production/backstage' }} \
+            --set backstage.image.repository=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }} \
             --set backstage.image.tag=${{ github.sha }}
 
       - name: Verify Deployment Rollout Status
