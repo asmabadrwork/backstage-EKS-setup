@@ -1,5 +1,5 @@
+import { createApiRef } from '@backstage/core-plugin-api';
 import {
-  createApiRef,
   OAuthApi,
   OpenIdConnectApi,
   ProfileInfoApi,
