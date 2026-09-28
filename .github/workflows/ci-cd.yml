@@ -219,7 +219,7 @@ jobs:
             --set secrets.create=false \
             --set externalSecrets.enabled=true \
             --set externalSecrets.awsSecretName=${{ vars.AWS_SECRET_NAME || 'production/backstage' }} \
-            --set backstage.image.repository=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }} \
+            --set backstage.image.repository=${{ needs.push-ecr.outputs.ecr_registry }}/${{ env.ECR_REPOSITORY }} \
             --set backstage.image.tag=${{ github.sha }}
 
       - name: Verify Deployment Rollout Status
