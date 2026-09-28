@@ -16,17 +16,13 @@ const authModule = createFrontendModule({
         loader: async () => props => (
           <SignInPage
             {...props}
-            providers={[
-              ...(process.env.NODE_ENV === 'development'
-                ? ['guest' as const]
-                : []),
-              {
-                id: 'oidc',
-                title: 'Keycloak SSO',
-                message: 'Sign in using Keycloak',
-                apiRef: oidcAuthApiRef,
-              },
-            ]}
+            auto
+            provider={{
+              id: 'oidc',
+              title: 'Keycloak SSO',
+              message: 'Sign in using Keycloak',
+              apiRef: oidcAuthApiRef,
+            }}
           />
         ),
       },
