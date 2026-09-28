@@ -19,7 +19,7 @@ COPY --chown=node:node package.json yarn.lock ./
 COPY --chown=node:node packages ./packages
 COPY --chown=node:node plugins ./plugins
 
-RUN yarn install --immutable
+RUN yarn install
 
 COPY --chown=node:node . ./
 
