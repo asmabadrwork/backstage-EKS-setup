@@ -52,7 +52,7 @@ jobs:
           node-version: 22
           cache: 'yarn'
       - name: Install Dependencies
-        run: yarn install
+        run: yarn install --immutable
       - name: Linting (repo lint)
         run: yarn backstage-cli repo lint
       - name: Deprecations Check (list-deprecations)
@@ -71,7 +71,7 @@ jobs:
           node-version: 22
           cache: 'yarn'
       - name: Install Dependencies
-        run: yarn install
+        run: yarn install --immutable
       - name: Type Checking (tsc:full)
         run: yarn tsc:full
 
@@ -88,7 +88,7 @@ jobs:
           node-version: 22
           cache: 'yarn'
       - name: Install Dependencies
-        run: yarn install
+        run: yarn install --immutable
       - name: Run Tests (repo test)
         run: yarn backstage-cli repo test
 
@@ -105,7 +105,7 @@ jobs:
           node-version: 22
           cache: 'yarn'
       - name: Install Dependencies
-        run: yarn install
+        run: yarn install --immutable
       - name: Config Validation (config:check)
         run: |
           yarn backstage-cli config:check --lax --strict \
@@ -130,7 +130,7 @@ jobs:
           node-version: 22
           cache: 'yarn'
       - name: Install Dependencies
-        run: yarn install
+        run: yarn install --immutable
       - name: Build All Packages
         run: yarn build:all
       - name: Upload Build Artifacts
