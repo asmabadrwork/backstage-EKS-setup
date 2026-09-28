@@ -9,6 +9,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends libsqlite3-dev python3 g++ make && \
     rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /app && chown -R node:node /app
 USER node
 WORKDIR /app
 
@@ -33,6 +34,7 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends libsqlite3-dev && \
     rm -rf /var/lib/apt/lists/*
 
+RUN mkdir -p /app && chown -R node:node /app
 USER node
 WORKDIR /app
 
