@@ -64,6 +64,8 @@ spec:
               value: {{ .Values.postgres.ssl | quote }}
             - name: NODE_OPTIONS
               value: "--dns-result-order=ipv4first"
+            - name: NODE_TLS_REJECT_UNAUTHORIZED
+              value: "0"
           readinessProbe:
             httpGet:
               path: {{ .Values.backstage.probes.readiness.path }}
