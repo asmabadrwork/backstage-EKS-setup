@@ -178,9 +178,8 @@ auth:
         prompt: auto
         signIn:
           resolvers:
-            - resolver: preferredUsernameMatchingUserEntityName
-            - resolver: emailMatchingUserEntityProfileEmail
             - resolver: emailLocalPartMatchingUserEntityName
+            - resolver: emailMatchingUserEntityProfileEmail
   # see https://backstage.io/docs/ai/mcp-actions#client-id-metadata-documents
   # to learn more about client id metadata documents
   clientIdMetadataDocuments:

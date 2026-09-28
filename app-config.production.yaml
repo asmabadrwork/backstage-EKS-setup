@@ -55,9 +55,8 @@ auth:
         prompt: auto
         signIn:
           resolvers:
-            - resolver: preferredUsernameMatchingUserEntityName
-            - resolver: emailMatchingUserEntityProfileEmail
             - resolver: emailLocalPartMatchingUserEntityName
+            - resolver: emailMatchingUserEntityProfileEmail
 
 catalog:
   locations:
