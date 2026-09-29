@@ -3,7 +3,7 @@ domain: ""
 
 # Backstage Application Configuration
 backstage:
-  replicaCount: 3
+  replicaCount: 1
   image:
     repository: ""
     tag: ""
@@ -63,3 +63,14 @@ externalSecrets:
     name: aws-secrets-manager
     region: ap-south-1
     serviceAccountName: external-secrets-sa
+
+# Target Database Worker Node Pool (dedicated=database)
+nodeSelector:
+  dedicated: database
+
+tolerations:
+  - key: "dedicated"
+    operator: "Equal"
+    value: "database"
+    effect: "NoSchedule"
+
