@@ -184,30 +184,62 @@ jobs:
     steps:
       - name: Checkout Repository (Helm Chart)
         uses: actions/checkout@v4
-
+ 
       - name: Set up Helm v3
         uses: azure/setup-helm@v4
         with:
           version: 'v3.15.0'
-
+ 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
         with:
           version: 'v1.32.0'
-
+ 
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          #role-to-assume: ${{ secrets.AWS_ROLE_ARN || vars.AWS_ROLE_ARN }}
-          role-to-assume: arn:aws:iam::724446904294:role/github-actions-eks-deploy
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-
+ 
+      - name: Install Session Manager plugin
+        run: |
+          curl -sSo /tmp/ssm.deb https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb
+          sudo dpkg -i /tmp/ssm.deb
+          session-manager-plugin --version
+ 
       - name: Update Kubeconfig for Amazon EKS
         run: |
           aws eks update-kubeconfig \
             --name ${{ env.EKS_CLUSTER_NAME }} \
             --region ${{ env.AWS_REGION }}
-
+ 
+      - name: Open SSM tunnel to private EKS endpoint
+        run: |
+          set -euo pipefail
+          EKS_HOST=$(aws eks describe-cluster --name "$EKS_CLUSTER_NAME" \
+            --query cluster.endpoint --output text | sed 's#https://##')
+ 
+          # Point the EKS hostname at the local tunnel so the TLS cert still validates
+          echo "127.0.0.1 $EKS_HOST" | sudo tee -a /etc/hosts
+ 
+          nohup aws ssm start-session \
+            --target "$BASTION_INSTANCE_ID" \
+            --document-name AWS-StartPortForwardingSessionToRemoteHost \
+            --parameters "{\"host\":[\"$EKS_HOST\"],\"portNumber\":[\"443\"],\"localPortNumber\":[\"8443\"]}" \
+            > /tmp/ssm-tunnel.log 2>&1 &
+ 
+          # Wait for the tunnel to accept connections
+          for i in $(seq 1 30); do
+            if (echo > /dev/tcp/127.0.0.1/8443) 2>/dev/null; then break; fi
+            sleep 1
+          done
+ 
+          kubectl config set-cluster "$(kubectl config current-context)" \
+            --server="https://$EKS_HOST:8443"
+ 
+          # Fail fast if the cluster isn't reachable through the tunnel
+          kubectl version || { cat /tmp/ssm-tunnel.log; exit 1; }
+ 
       - name: Deploy Backstage via Helm
         run: |
           helm upgrade --install backstage ./helm/backstage \
@@ -222,7 +254,12 @@ jobs:
             --set externalSecrets.awsSecretName=${{ vars.AWS_SECRET_NAME || 'production/backstage' }} \
             --set backstage.image.repository=${{ needs.push-ecr.outputs.ecr_registry }}/${{ env.ECR_REPOSITORY }} \
             --set backstage.image.tag=${{ github.sha }}
-
+ 
       - name: Verify Deployment Rollout Status
         run: |
           kubectl rollout status deployment backstage -n ${{ env.K8S_NAMESPACE }} --timeout=180s
+ 
+      - name: Show SSM tunnel log on failure
+        if: failure()
+        run: cat /tmp/ssm-tunnel.log || true
+ 
