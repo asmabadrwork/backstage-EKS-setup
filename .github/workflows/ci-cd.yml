@@ -19,7 +19,7 @@ env:
   CI: 'true'
   NODE_OPTIONS: '--max-old-space-size=8192'
   AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
-  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'backstage-production' }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'dev-negd-eks' }}
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'backstage' }}
   K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'backstage' }}
 
