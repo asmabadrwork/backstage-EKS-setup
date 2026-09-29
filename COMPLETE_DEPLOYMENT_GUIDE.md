@@ -202,7 +202,7 @@ auth:
   providers:
     oidc:
       production:
-        metadataUrl: https://keycloak.tyagi.fun/realms/backstage/.well-known/openid-configuration
+        metadataUrl: https://keycloak-aws.opstree.dev/realms/master/.well-known/openid-configuration
         clientId: ${AUTH_OIDC_CLIENT_ID}
         clientSecret: ${AUTH_OIDC_CLIENT_SECRET}
         prompt: auto

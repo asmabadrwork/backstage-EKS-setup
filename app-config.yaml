@@ -172,7 +172,7 @@ auth:
     guest: {}
     oidc:
       production:
-        metadataUrl: ${AUTH_OIDC_METADATA_URL:https://keycloak.tyagi.fun/realms/master/.well-known/openid-configuration}
+        metadataUrl: ${AUTH_OIDC_METADATA_URL:https://keycloak-aws.opstree.dev/realms/master/.well-known/openid-configuration}
         clientId: 'backstage'
         clientSecret: ${AUTH_OIDC_CLIENT_SECRET}
         prompt: auto
