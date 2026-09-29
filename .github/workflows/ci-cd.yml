@@ -22,6 +22,8 @@ env:
   EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'dev-negd-eks' }}
   ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'backstage' }}
   K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE || 'backstage' }}
+  AWS_ROLE_ARN: arn:aws:iam::724446904294:role/github-actions-eks-deploy
+  BASTION_INSTANCE_ID: ${{ vars.BASTION_INSTANCE_ID || 'i-0effba6ccca9f949f' }}
 
 jobs:
   # =========================================================================
