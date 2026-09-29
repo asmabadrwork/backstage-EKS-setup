@@ -31,6 +31,14 @@ spec:
                   matchLabels:
                     {{- include "backstage.selectorLabels" . | nindent 22 }}
                 topologyKey: topology.kubernetes.io/zone
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.backstage.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -43,8 +51,10 @@ spec:
             - name: http
               containerPort: {{ .Values.backstage.service.targetPort }}
           envFrom:
+            {{- if .Values.postgres.createSecret }}
             - secretRef:
                 name: {{ .Release.Name }}-postgres-secrets
+            {{- end }}
             - secretRef:
                 name: {{ .Values.secrets.name }}
           env:

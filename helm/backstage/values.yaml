@@ -8,8 +8,7 @@ backstage:
     repository: ""
     tag: ""
     pullPolicy: Always
-  imagePullSecrets:
-    - name: ecr-secret
+  imagePullSecrets: []
   service:
     type: ClusterIP
     port: 80
@@ -64,9 +63,9 @@ externalSecrets:
     region: ap-south-1
     serviceAccountName: external-secrets-sa
 
-# Target Database Worker Node Pool (dedicated=database)
+# Target Database Worker Node Pool (dev-negd-ng-db)
 nodeSelector:
-  dedicated: database
+  eks.amazonaws.com/nodegroup: dev-negd-ng-db
 
 tolerations:
   - key: "dedicated"
