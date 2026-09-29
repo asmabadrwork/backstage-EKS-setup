@@ -51,7 +51,7 @@ spec:
             - name: http
               containerPort: {{ .Values.backstage.service.targetPort }}
           envFrom:
-            {{- if .Values.postgres.createSecret }}
+            {{- if or .Values.postgres.createSecret .Values.externalSecrets.enabled }}
             - secretRef:
                 name: {{ .Release.Name }}-postgres-secrets
             {{- end }}
