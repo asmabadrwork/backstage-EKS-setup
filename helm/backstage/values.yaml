@@ -54,6 +54,13 @@ secrets:
   authOidcClientId: "backstage"
   authOidcClientSecret: ""
 
+# ServiceAccount Configuration for External Secrets Operator IRSA
+serviceAccount:
+  create: true
+  name: external-secrets-sa
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::724446904294:role/backstage-external-secrets"
+
 # AWS Secrets Manager Integration (External Secrets Operator)
 externalSecrets:
   enabled: true # Set to true when syncing secrets directly from AWS Secrets Manager
