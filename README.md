@@ -4,11 +4,10 @@ This repository contains the enterprise-grade production deployment setup for **
 
 ---
 
-## Master Deployment Guide
+## Documentation Guides
 
-For complete, step-by-step production deployment instructions, IAM role trust policies, AWS Secrets Manager configuration, Keycloak realm setup, and GitHub Actions CI/CD workflow details, refer to the single master guide:
-
-👉 **[PRODUCTION_DEPLOYMENT_GUIDE.md](file:///c:/Users/lenovo/Downloads/backstage-EKS-setup/PRODUCTION_DEPLOYMENT_GUIDE.md)**
+- **Master Production Deployment Guide**: [PRODUCTION_DEPLOYMENT_GUIDE.md](file:///c:/Users/lenovo/Downloads/backstage-EKS-setup/PRODUCTION_DEPLOYMENT_GUIDE.md) (IAM Roles, AWS Secrets Manager, Keycloak OIDC, EKS setup)
+- **Developer Guide**: [DEVELOPER_GUIDE.md](file:///c:/Users/lenovo/Downloads/backstage-EKS-setup/DEVELOPER_GUIDE.md) (Local development, monorepo structure, PR verification, CI/CD workflow)
 
 ---
 
