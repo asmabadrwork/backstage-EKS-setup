@@ -2,16 +2,14 @@
 
 This document provides a single, comprehensive, production-grade master guide for deploying **Backstage** on **AWS EKS** using **Keycloak 26.x OIDC Single Sign-On (SSO)**, **External Secrets Operator (ESO)**, **Amazon RDS PostgreSQL**, and **GitHub Actions CI/CD** with AWS OIDC authentication.
 
-All infrastructure resources (EKS Cluster, Node Groups, IAM Roles, AWS Secrets Manager, Bastion EC2, and ECR Repositories) are assumed to be provisioned via Terraform / Infrastructure as Code (IaC).
-
 ---
 
 ## Table of Contents
-1. [Infrastructure Parameters & Variable Mapping](#1-infrastructure-parameters--variable-mapping)
+1. [Infrastructure Parameters & Helm Values Mapping](#1-infrastructure-parameters--helm-values-mapping)
 2. [AWS IAM OIDC Provider & Service Account Roles (IRSA)](#2-aws-iam-oidc-provider--service-account-roles-irsa)
-   - [2.1 GitHub Actions Deployment IAM Role (`<GITHUB_ROLE_NAME>`)](#21-github-actions-deployment-iam-role-github_role_name)
-   - [2.2 External Secrets Operator IRSA Role (`<ESO_ROLE_NAME>`)](#22-external-secrets-operator-irsa-role-eso_role_name)
-3. [AWS Secrets Manager Setup (`<AWS_SECRET_NAME>`)](#3-aws-secrets-manager-setup-aws_secret_name)
+   - [2.1 GitHub Actions Deployment IAM Role (`github-actions-eks-deploy`)](#21-github-actions-deployment-iam-role-github-actions-eks-deploy)
+   - [2.2 External Secrets Operator IRSA Role (`backstage-external-secrets`)](#22-external-secrets-operator-irsa-role-backstage-external-secrets)
+3. [AWS Secrets Manager Setup (`production/backstage`)](#3-aws-secrets-manager-setup-productionbackstage)
 4. [GitHub Repository Secrets & Variables Matrix](#4-github-repository-secrets--variables-matrix)
 5. [Keycloak OIDC Realm & Client Setup](#5-keycloak-oidc-realm--client-setup)
 6. [Backstage Code Configuration for Keycloak OIDC](#6-backstage-code-configuration-for-keycloak-oidc)
@@ -22,52 +20,63 @@ All infrastructure resources (EKS Cluster, Node Groups, IAM Roles, AWS Secrets M
 
 ---
 
-## 1. Infrastructure Parameters & Variable Mapping
+## 1. Infrastructure Parameters & Helm Values Mapping
 
-When deploying to client environments, replace the placeholder variables below with values exported by your Terraform modules:
+The table below maps the required IAM Role Names, Secret Names, and Terraform output placeholders used across the deployment:
 
-| Variable Placeholder | Description | Example / Reference Value |
+| Parameter Key / Name | Exact Name / Value Format | Description |
 | :--- | :--- | :--- |
-| `<AWS_ACCOUNT_ID>` | 12-digit AWS Account ID | `724446904294` |
-| `<AWS_REGION>` | Target AWS Region | `ap-south-1` |
-| `<EKS_CLUSTER_NAME>` | Name of the Amazon EKS Cluster | `dev-negd-eks` |
-| `<EKS_OIDC_ID>` | OIDC Issuer Hash ID for EKS Cluster | `EXXXXXXXXXXXXXXX` |
-| `<K8S_NAMESPACE>` | Target Kubernetes Namespace | `backstage` |
-| `<TARGET_NODEGROUP>` | Target EC2 Nodegroup Name | `dev-negd-ng-db` |
-| `<TARGET_NODE_TAINT_KEY>` | Nodegroup Taint Key | `dedicated` |
-| `<TARGET_NODE_TAINT_VALUE>` | Nodegroup Taint Value | `database` |
-| `<TARGET_NODE_TAINT_EFFECT>` | Nodegroup Taint Effect | `NoSchedule` |
-| `<BASTION_INSTANCE_ID>` | EC2 Bastion Instance ID for SSM Tunnel | `i-0effba6ccca9f949f` |
-| `<ECR_REPOSITORY>` | Amazon ECR Repository Name | `backstage` |
-| `<AWS_SECRET_NAME>` | AWS Secrets Manager Secret Name | `production/backstage` |
-| `<GITHUB_ORG>` | GitHub Organization / Owner Name | `asmabadrwork` |
-| `<GITHUB_REPO>` | GitHub Repository Name | `backstage-EKS-setup` |
-| `<BACKSTAGE_DOMAIN>` | Fully Qualified Domain Name for Backstage | `backstage-aws.opstree.dev` |
-| `<KEYCLOAK_DOMAIN>` | Fully Qualified Domain Name for Keycloak | `keycloak-aws.opstree.dev` |
-| `<POSTGRES_HOST>` | Amazon RDS PostgreSQL Endpoint | `your-rds-endpoint.cXXXXXX.ap-south-1.rds.amazonaws.com` |
-| `<POSTGRES_USER>` | PostgreSQL Master Admin Username | `keycloakadmin` |
-| `<GITHUB_ROLE_ARN>` | IAM Role ARN for GitHub Actions OIDC | `arn:aws:iam::<AWS_ACCOUNT_ID>:role/github-actions-eks-deploy` |
-| `<ESO_ROLE_ARN>` | IAM Role ARN for External Secrets IRSA | `arn:aws:iam::<AWS_ACCOUNT_ID>:role/backstage-external-secrets` |
+| **GitHub Actions IAM Role Name** | `github-actions-eks-deploy` | OIDC Role Name for GitHub Actions deployment runner |
+| **External Secrets IRSA Role Name** | `backstage-external-secrets` | IAM Role Name for External Secrets ServiceAccount |
+| **AWS Secret Name** | `production/backstage` | AWS Secrets Manager secret key name |
+| **EKS ServiceAccount Name** | `external-secrets-sa` | ServiceAccount in `backstage` namespace |
+| `<AWS_ACCOUNT_ID>` | `123456789012` | 12-digit AWS Account ID |
+| `<AWS_REGION>` | `ap-south-1` | Target AWS Region |
+| `<EKS_CLUSTER_NAME>` | `dev-negd-eks` | Name of the Amazon EKS Cluster |
+| `<EKS_OIDC_ID>` | `EXXXXXXXXXXXXXXX` | OIDC Issuer Hash ID for EKS Cluster |
+| `<K8S_NAMESPACE>` | `backstage` | Target Kubernetes Namespace |
+| `<TARGET_NODEGROUP>` | `dev-negd-ng-db` | Target EC2 Nodegroup Name for pods |
+| `<BASTION_INSTANCE_ID>` | `i-0effba6ccca9f949f` | EC2 Bastion Instance ID for SSM Tunnel |
+| `<ECR_REPOSITORY>` | `backstage` | Amazon ECR Repository Name |
+| `<GITHUB_ORG>` | `asmabadrwork` | GitHub Organization / Owner Name |
+| `<GITHUB_REPO>` | `backstage-EKS-setup` | GitHub Repository Name |
+| `<BACKSTAGE_DOMAIN>` | `backstage-aws.opstree.dev` | Public FQDN for Backstage Ingress |
+| `<KEYCLOAK_DOMAIN>` | `keycloak-aws.opstree.dev` | Public FQDN for Keycloak Server |
+| `<POSTGRES_HOST>` | `rds-endpoint.cXXXX.ap-south-1.rds.amazonaws.com` | Amazon RDS PostgreSQL Endpoint |
 
 ---
 
 ## 2. AWS IAM OIDC Provider & Service Account Roles (IRSA)
 
-### 2.1 GitHub Actions Deployment IAM Role (`<GITHUB_ROLE_NAME>`)
+### 2.1 GitHub Actions Deployment IAM Role (`github-actions-eks-deploy`)
 
-This IAM role enables GitHub Actions to authenticate via OpenID Connect (OIDC), push container images to Amazon ECR, inspect EKS cluster configuration, and create an AWS SSM Session Manager port-forwarding tunnel.
+Create an IAM role named **`github-actions-eks-deploy`** to allow GitHub Actions CI/CD runner to authenticate via OpenID Connect (OIDC), push container images to Amazon ECR, inspect EKS cluster configuration, and establish an AWS SSM Session Manager port-forwarding tunnel.
 
 #### Step 1: Ensure IAM OIDC Provider Exists for GitHub
-- **Provider URL**: `https://token.actions.githubusercontent.com`
-- **Audience**: `sts.amazonaws.com`
 
-#### Step 2: Role Trust Policy (`<GITHUB_ROLE_NAME>`)
+##### Option A: Using AWS CLI
+```bash
+aws iam create-open-id-connect-provider \
+  --url "https://token.actions.githubusercontent.com" \
+  --client-id-list "sts.amazonaws.com" \
+  --thumbprint-list "6938fd4d98bab03faadb97b34396831e3780aea1" "1c5860a5f6ec55543956db1999d8079542a10f0e"
+```
+
+##### Option B: Using AWS Management Console
+1. Navigate to **IAM** -> **Identity providers** -> Click **Add provider**.
+2. **Provider type**: Select `OpenID Connect`.
+3. **Provider URL**: Enter `https://token.actions.githubusercontent.com` and click **Get thumbprint**.
+4. **Audience**: Enter `sts.amazonaws.com`.
+5. Click **Add provider**.
+
+#### Step 2: Role Trust Policy (`github-actions-eks-deploy`)
 
 ```json
 {
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "GitHubActionsOIDC",
       "Effect": "Allow",
       "Principal": {
         "Federated": "arn:aws:iam::<AWS_ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
@@ -78,7 +87,10 @@ This IAM role enables GitHub Actions to authenticate via OpenID Connect (OIDC), 
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:<GITHUB_ORG>/<GITHUB_REPO>:*"
+          "token.actions.githubusercontent.com:sub": [
+            "repo:<GITHUB_ORG>@*/<GITHUB_REPO>@*:*",
+            "repo:<GITHUB_ORG>/<GITHUB_REPO>:*"
+          ]
         }
       }
     }
@@ -86,52 +98,81 @@ This IAM role enables GitHub Actions to authenticate via OpenID Connect (OIDC), 
 }
 ```
 
-#### Step 3: Inline Permission Policy (`GitHubActionsEKSPermissions`)
+#### Step 3: Attached & Inline Permission Policies
+
+##### Policy 1: `github-action-deploy` (Customer Managed Policy)
 ```json
 {
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "ECRAuthAndPush",
+      "Sid": "ECRAuth",
       "Effect": "Allow",
       "Action": [
-        "ecr:GetAuthorizationToken",
-        "ecr:BatchCheckLayerAvailability",
-        "ecr:GetDownloadUrlForLayer",
-        "ecr:GetRepositoryPolicy",
-        "ecr:DescribeRepositories",
-        "ecr:ListImages",
-        "ecr:DescribeImages",
-        "ecr:BatchGetImage",
-        "ecr:InitiateLayerUpload",
-        "ecr:UploadLayerPart",
-        "ecr:CompleteLayerUpload",
-        "ecr:PutImage"
+        "ecr:GetAuthorizationToken"
       ],
       "Resource": "*"
     },
     {
-      "Sid": "EKSClusterDescribe",
+      "Sid": "ECRPush",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:CompleteLayerUpload",
+        "ecr:InitiateLayerUpload",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart"
+      ],
+      "Resource": "arn:aws:ecr:<AWS_REGION>:<AWS_ACCOUNT_ID>:repository/<ECR_REPOSITORY>"
+    },
+    {
+      "Sid": "EKSDescribe",
       "Effect": "Allow",
       "Action": [
         "eks:DescribeCluster"
       ],
       "Resource": "arn:aws:eks:<AWS_REGION>:<AWS_ACCOUNT_ID>:cluster/<EKS_CLUSTER_NAME>"
-    },
+    }
+  ]
+}
+```
+
+##### Policy 2: `eks-describe-cluster` (Customer Inline Policy)
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
     {
-      "Sid": "SSMTunnelForBastion",
       "Effect": "Allow",
       "Action": [
-        "ssm:StartSession",
-        "ssm:SendCommand",
-        "ssm:TerminateSession",
-        "ssm:ResumeSession",
-        "ssm:DescribeSessions"
+        "eks:DescribeCluster"
       ],
+      "Resource": "arn:aws:eks:<AWS_REGION>:<AWS_ACCOUNT_ID>:cluster/<EKS_CLUSTER_NAME>"
+    }
+  ]
+}
+```
+
+##### Policy 3: `ssm-eks-tunnel` (Customer Inline Policy)
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
       "Resource": [
         "arn:aws:ec2:<AWS_REGION>:<AWS_ACCOUNT_ID>:instance/<BASTION_INSTANCE_ID>",
         "arn:aws:ssm:<AWS_REGION>::document/AWS-StartPortForwardingSessionToRemoteHost"
       ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:TerminateSession",
+        "ssm:ResumeSession"
+      ],
+      "Resource": "arn:aws:ssm:<AWS_REGION>:<AWS_ACCOUNT_ID>:session/*"
     }
   ]
 }
@@ -139,9 +180,15 @@ This IAM role enables GitHub Actions to authenticate via OpenID Connect (OIDC), 
 
 ---
 
-### 2.2 External Secrets Operator IRSA Role (`<ESO_ROLE_NAME>`)
+### 2.2 External Secrets Operator IRSA Role (`backstage-external-secrets`)
 
-This IAM role grants the Kubernetes ServiceAccount (`external-secrets-sa`) in namespace `<K8S_NAMESPACE>` permission to read secrets from AWS Secrets Manager.
+#### Purpose & Why This Role Exists
+- **Zero-Trust Security**: Eliminates plain text database passwords (`POSTGRES_PASSWORD`) and Keycloak secrets (`AUTH_OIDC_CLIENT_SECRET`) from Helm `values.yaml` or Git repositories.
+- **IAM Roles for Service Accounts (IRSA)**: Grants temporary AWS credentials to the `external-secrets-sa` ServiceAccount in the `backstage` namespace using EKS OIDC, without storing static AWS Access Keys in Kubernetes.
+- **Automated Secret Syncing**: Enables External Secrets Operator (ESO) to pull secrets from AWS Secrets Manager (`production/backstage`) and populate native Kubernetes secret objects (`backstage-postgres-secrets` and `backstage-secrets`).
+
+#### Role Name: `backstage-external-secrets`
+#### ServiceAccount Binding: `external-secrets-sa` (Namespace: `backstage`)
 
 #### Trust Policy (Bound to EKS OIDC Provider & ServiceAccount)
 
@@ -166,7 +213,7 @@ This IAM role grants the Kubernetes ServiceAccount (`external-secrets-sa`) in na
 }
 ```
 
-#### Permission Policy (`BackstageSecretsManagerAccess`)
+#### Permission Policy (`read-backstage-secrets`)
 ```json
 {
   "Version": "2012-10-17",
@@ -177,7 +224,7 @@ This IAM role grants the Kubernetes ServiceAccount (`external-secrets-sa`) in na
         "secretsmanager:GetSecretValue",
         "secretsmanager:DescribeSecret"
       ],
-      "Resource": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:<AWS_SECRET_NAME>-*"
+      "Resource": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:production/backstage-*"
     }
   ]
 }
@@ -187,13 +234,13 @@ This IAM role grants the Kubernetes ServiceAccount (`external-secrets-sa`) in na
 ```bash
 # 1. Create IAM Policy for Secrets Manager Access
 aws iam create-policy \
-  --policy-name BackstageSecretsManagerAccess \
+  --policy-name read-backstage-secrets \
   --policy-document '{
     "Version": "2012-10-17",
     "Statement": [{
       "Effect": "Allow",
       "Action": ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
-      "Resource": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:<AWS_SECRET_NAME>-*"
+      "Resource": "arn:aws:secretsmanager:<AWS_REGION>:<AWS_ACCOUNT_ID>:secret:production/backstage-*"
     }]
   }'
 
@@ -203,21 +250,21 @@ eksctl create iamserviceaccount \
   --namespace <K8S_NAMESPACE> \
   --cluster <EKS_CLUSTER_NAME> \
   --region <AWS_REGION> \
-  --role-name <ESO_ROLE_NAME> \
-  --attach-policy-arn arn:aws:iam::<AWS_ACCOUNT_ID>:policy/BackstageSecretsManagerAccess \
+  --role-name backstage-external-secrets \
+  --attach-policy-arn arn:aws:iam::<AWS_ACCOUNT_ID>:policy/read-backstage-secrets \
   --approve \
   --override-existing-serviceaccounts
 ```
 
 ---
 
-## 3. AWS Secrets Manager Setup (`<AWS_SECRET_NAME>`)
+## 3. AWS Secrets Manager Setup (`production/backstage`)
 
-Create the secret key in AWS Secrets Manager using AWS CLI, Terraform, or AWS Console:
+Create the secret named **`production/backstage`** in AWS Secrets Manager using AWS CLI, Terraform, or AWS Management Console:
 
 ```bash
 aws secretsmanager create-secret \
-  --name "<AWS_SECRET_NAME>" \
+  --name "production/backstage" \
   --region <AWS_REGION> \
   --secret-string '{
     "POSTGRES_USER": "<POSTGRES_USER>",
@@ -241,21 +288,21 @@ Configure these parameters in GitHub: **Repository Settings** -> **Secrets and v
 
 | Variable Name | Value | Description |
 | :--- | :--- | :--- |
-| `AWS_REGION` | `<AWS_REGION>` | Target AWS Region |
-| `EKS_CLUSTER_NAME` | `<EKS_CLUSTER_NAME>` | Target EKS Cluster Name |
-| `ECR_REPOSITORY` | `<ECR_REPOSITORY>` | Amazon ECR Repository Name |
-| `K8S_NAMESPACE` | `<K8S_NAMESPACE>` | Target Kubernetes Namespace |
+| `AWS_REGION` | `<AWS_REGION>` | Target AWS Region (e.g. `ap-south-1`) |
+| `EKS_CLUSTER_NAME` | `<EKS_CLUSTER_NAME>` | Target EKS Cluster Name (e.g. `dev-negd-eks`) |
+| `ECR_REPOSITORY` | `<ECR_REPOSITORY>` | Amazon ECR Repository Name (`backstage`) |
+| `K8S_NAMESPACE` | `<K8S_NAMESPACE>` | Target Kubernetes Namespace (`backstage`) |
 | `BASTION_INSTANCE_ID` | `<BASTION_INSTANCE_ID>` | EC2 Bastion Instance ID for SSM Tunnel |
 | `DOMAIN` | `<BACKSTAGE_DOMAIN>` | Public HTTPS Domain for Backstage |
 | `POSTGRES_HOST` | `<POSTGRES_HOST>` | Amazon RDS PostgreSQL Endpoint |
-| `POSTGRES_USER` | `<POSTGRES_USER>` | PostgreSQL Master Username |
-| `AWS_SECRET_NAME` | `<AWS_SECRET_NAME>` | AWS Secrets Manager Secret Name |
+| `POSTGRES_USER` | `<POSTGRES_USER>` | PostgreSQL Master Username (`keycloakadmin`) |
+| `AWS_SECRET_NAME` | `production/backstage` | AWS Secrets Manager Secret Name |
 
 ### Secrets (Encrypted Secrets)
 
 | Secret Name | Value | Description |
 | :--- | :--- | :--- |
-| `AWS_ROLE_ARN` | `<GITHUB_ROLE_ARN>` | IAM Role ARN for GitHub Actions OIDC |
+| `AWS_ROLE_ARN` | `arn:aws:iam::<AWS_ACCOUNT_ID>:role/github-actions-eks-deploy` | IAM Role ARN for GitHub Actions OIDC |
 
 ---
 
@@ -282,7 +329,7 @@ Configure these parameters in GitHub: **Repository Settings** -> **Secrets and v
      - `https://<BACKSTAGE_DOMAIN>`
      - `http://localhost:3000`
    - Click **Save**
-5. Copy Client Secret from **Credentials** tab and store it in AWS Secrets Manager (`<AWS_SECRET_NAME>` -> `AUTH_OIDC_CLIENT_SECRET`).
+5. Copy Client Secret from **Credentials** tab and store it in AWS Secrets Manager (`production/backstage` -> `AUTH_OIDC_CLIENT_SECRET`).
 
 ---
 
@@ -375,7 +422,7 @@ serviceAccount:
   create: true
   name: external-secrets-sa
   annotations:
-    eks.amazonaws.com/role-arn: "<ESO_ROLE_ARN>"
+    eks.amazonaws.com/role-arn: "arn:aws:iam::<AWS_ACCOUNT_ID>:role/backstage-external-secrets"
 ```
 
 ### 7.3 Database Connection Pool Optimization (`app-config.production.yaml`)
@@ -412,7 +459,7 @@ The pipeline defined in [`.github/workflows/ci-cd.yml`](file:///c:/Users/lenovo/
 
 - **Stage 1 (CI Security & Verification)**: Gitleaks secret scanning (with `fetch-depth: 0`), code linting, typechecking (`tsc:full`), unit tests, and configuration validation.
 - **Stage 2 (Build Release Bundle)**: Compiles frontend and backend bundles via `yarn build:all`.
-- **Stage 3 (Docker Build & ECR Push)**: Authenticates to ECR via AWS OIDC Role `<GITHUB_ROLE_ARN>` and pushes tagged container images.
+- **Stage 3 (Docker Build & ECR Push)**: Authenticates to ECR via AWS OIDC Role `arn:aws:iam::<AWS_ACCOUNT_ID>:role/github-actions-eks-deploy` and pushes tagged container images.
 - **Stage 4 (EKS Deployment)**: Connects via SSM Session Manager port-forwarding to bastion `<BASTION_INSTANCE_ID>` and executes `helm upgrade --install backstage ./helm/backstage`.
 
 ---
@@ -422,7 +469,7 @@ The pipeline defined in [`.github/workflows/ci-cd.yml`](file:///c:/Users/lenovo/
 ### Step 1: Populate AWS Secrets Manager
 ```bash
 aws secretsmanager create-secret \
-  --name "<AWS_SECRET_NAME>" \
+  --name "production/backstage" \
   --region <AWS_REGION> \
   --secret-string '{"POSTGRES_USER":"<POSTGRES_USER>","POSTGRES_PASSWORD":"<POSTGRES_PASSWORD>","GITHUB_TOKEN":"<GITHUB_TOKEN>","BACKEND_SECRET":"<BACKEND_SECRET>","AUTH_OIDC_CLIENT_ID":"backstage","AUTH_OIDC_CLIENT_SECRET":"<AUTH_OIDC_CLIENT_SECRET>"}'
 ```
